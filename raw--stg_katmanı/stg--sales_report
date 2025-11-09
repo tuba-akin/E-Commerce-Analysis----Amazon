@@ -1,0 +1,8 @@
+SELECT
+  `SKU Code` AS sku_code,
+  `Design_No` AS design_no,
+  SAFE_CAST(Stock AS INT64) AS stock,
+  Category AS category,
+  Size AS size,
+  Color AS color
+FROM `ordinal-stone-470811-t7`.`Amazon`.`sale_report`
