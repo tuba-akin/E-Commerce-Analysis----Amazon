@@ -1,0 +1,43 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: kpi_top_products
+-- Amaç: Aylık bazda en çok satan 10 ürünü (SKU) belirlemek
+-- Veri Kaynağı: int_sales_metrics
+-- Grain: AY × SKU
+-- ==========================================================
+
+-- 1️⃣ Her ay için SKU bazlı satış metriklerini hesapla
+with base as (
+  select
+    format_date('%Y-%m', order_date) as ym,  -- YYYY-MM formatında ay
+    sku,                                   -- Ürün SKU kodu
+    category,                              -- Ürün kategorisi
+    sum(qty) as total_qty,                 -- Toplam satılan adet
+    sum(revenue) as total_revenue,         -- Toplam gelir
+    avg(unit_price) as avg_unit_price      -- Ortalama satış fiyatı
+  from {{ ref('int_sales_metrics') }}
+  group by 1, 2, 3
+),
+
+-- 2️⃣ Her ayda en çok gelir getiren ilk 10 ürünü sırala
+ranked as (
+  select
+    *,
+    row_number() over (partition by ym order by total_revenue desc) as rank
+  from base
+)
+
+-- 3️⃣ İlk 10 ürünü seç
+select
+  ym,
+  sku,
+  category,
+  total_qty,
+  total_revenue,
+  avg_unit_price,
+  rank
+from ranked
+where rank <= 10
+order by ym, rank
+
