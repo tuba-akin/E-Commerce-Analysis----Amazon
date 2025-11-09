@@ -1,0 +1,44 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: kpi_sales_summary
+-- Amaç: Aylık satış, gelir ve büyüme oranlarını hesaplamak
+-- Veri Kaynağı: int_sales_metrics (temizlenmiş birleşik satış verisi)
+-- Grain (tanecik): AY × (TÜM KANALLAR)
+-- ==========================================================
+
+--  Aylık bazda satış özetini oluştur
+with base as (
+  select
+    format_date('%Y-%m', order_date) as ym,  -- YYYY-MM formatında ay bilgisi
+    extract(year from order_date) as year,   -- Yıl
+    extract(month from order_date) as month, -- Ay
+    sum(qty) as total_qty,                   -- Aylık toplam adet
+    sum(revenue) as total_revenue,           -- Aylık toplam gelir
+    avg(unit_price) as avg_unit_price        -- Ortalama satış fiyatı
+  from {{ ref('int_sales_metrics') }}
+  group by 1, 2, 3
+),
+
+--  Önceki aya göre büyüme oranını hesapla
+growth as (
+  select
+    *,
+    round(
+      (total_revenue - lag(total_revenue) over (order by ym))
+      / nullif(lag(total_revenue) over (order by ym), 0) * 100,
+      2
+    ) as revenue_growth_pct  -- Aylık gelir artış yüzdesi
+  from base
+)
+
+--  Nihai sonuç tablosu
+select
+  PARSE_DATE('%Y-%m', ym) as ym_date,  --  DATE tipine dönüştürülmüş hali
+  year,
+  month,
+  total_qty,
+  total_revenue,
+  avg_unit_price,
+  revenue_growth_pct
+from growth
