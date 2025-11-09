@@ -1,0 +1,14 @@
+{{ config(materialized='view') }}
+
+SELECT
+  Category AS category,
+  Sku AS sku,
+  Catalog AS catalog,
+  SAFE_CAST(Weight AS FLOAT64) AS weight,
+  SAFE_CAST(`Amazon MRP` AS FLOAT64) AS amazon_mrp,
+  SAFE_CAST(`Amazon FBA MRP` AS FLOAT64) AS amazon_fba_mrp,
+  SAFE_CAST(`Flipkart MRP` AS FLOAT64) AS flipkart_mrp,
+  SAFE_CAST(`Myntra MRP` AS FLOAT64) AS myntra_mrp,
+  SAFE_CAST(`Ajio MRP` AS FLOAT64) AS ajio_mrp
+FROM {{ source('amazon', 'march_21') }}
+WHERE Sku IS NOT NULL
