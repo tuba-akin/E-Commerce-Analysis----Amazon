@@ -1,0 +1,54 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: kpi_channel_performance
+-- Amaç: Her satış kanalının aylık bazda performans metriklerini hesaplamak
+-- Veri Kaynağı: int_sales_metrics
+-- Grain: AY × KANAL
+-- ==========================================================
+
+-- 1️⃣ Aylık ve kanal bazında temel metrikleri hesapla
+with channel_base as (
+  select
+    format_date('%Y-%m', order_date) as ym,   -- YYYY-MM formatında ay
+    channel,                                 -- Satış kanalı
+    sum(qty) as total_qty,                   -- Toplam adet
+    sum(revenue) as total_revenue,           -- Toplam gelir
+    avg(unit_price) as avg_unit_price        -- Ortalama satış fiyatı
+  from {{ ref('int_sales_metrics') }}
+  group by 1, 2
+),
+
+--  Aylık toplam gelirleri hesapla (oranlar için)
+month_totals as (
+  select
+    ym,
+    sum(total_revenue) as month_total_revenue
+  from channel_base
+  group by ym
+),
+
+--  Kanal bazlı performans oranlarını hesapla
+final as (
+  select
+    c.ym,
+    c.channel,
+    c.total_qty,
+    c.total_revenue,
+    c.avg_unit_price,
+    round((c.total_revenue / nullif(m.month_total_revenue, 0)) * 100, 2) as revenue_share_pct  -- Kanalın toplam gelirdeki payı
+  from channel_base c
+  left join month_totals m
+    on c.ym = m.ym
+)
+
+--  Nihai çıktı
+select
+  ym,
+  channel,
+  total_qty,
+  total_revenue,
+  avg_unit_price,
+  revenue_share_pct
+from final
+order by ym, channel
