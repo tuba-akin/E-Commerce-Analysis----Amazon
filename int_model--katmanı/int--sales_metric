@@ -1,0 +1,94 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: int_sales_metrics
+-- Amaç: Tüm Amazon satışlarını zenginleştirir.
+-- Grain: order_date × sku × channel
+-- ==========================================================
+
+--️ Kaynağı al
+with amaz as (
+  select
+    order_date,
+    sku,
+    qty,
+    amount as revenue,
+    null as unit_price_hint,
+    'amazon' as channel,
+    status,
+    fulfilment,
+    sales_channel,
+    cast(null as string) as customer,
+    style,
+    size,
+    category as source_category,
+    currency
+  from {{ ref('stg_amazon_sale_report') }}
+  where order_date is not null
+),
+
+-- Ürün master (sale_report) ile zenginleştir
+sr as (
+  select
+    upper(sku_code) as sku_key,
+    category as sr_category,
+    safe_cast(stock as int64) as stock
+  from {{ ref('stg_sale_report') }}
+),
+
+--️ Enrichment + türetilmiş alanlar
+enriched as (
+  select
+    a.order_date,
+    a.sku,
+    a.channel,
+    a.qty,
+    a.revenue,
+    coalesce(safe_divide(a.revenue, nullif(a.qty, 0)), a.unit_price_hint) as unit_price,
+    coalesce(a.source_category, sr.sr_category) as category,
+    a.status,
+    a.fulfilment,
+    a.sales_channel,
+    a.customer,
+    a.style,
+    a.size,
+    a.currency,
+    sr.stock
+  from amaz a
+  left join sr
+    on upper(a.sku) = sr.sku_key
+),
+
+-- Temizlik: boş/negatif satırları çıkar
+clean as (
+  select *
+  from enriched
+  where
+    order_date is not null
+    and revenue is not null
+    and qty is not null
+    and qty > 0
+    and revenue >= 0
+)
+
+-- Son çıktı
+select
+  order_date,
+  extract(year from order_date) as year,
+  extract(month from order_date) as month,
+  format_date('%Y-%m', order_date) as ym,
+  sku,
+  category,
+  channel,
+  customer,
+  style,
+  size,
+  status,
+  fulfilment,
+  sales_channel,
+  currency,
+  stock,
+  qty,
+  revenue,
+  unit_price
+from clean
