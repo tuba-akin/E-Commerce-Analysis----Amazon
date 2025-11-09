@@ -1,0 +1,42 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: kpi_channel_summary
+-- Amaç: Satış kanallarına göre toplam satış performansını özetlemek
+-- Veri Kaynağı: int_sales_metrics
+-- Grain: AY × CHANNEL
+-- ==========================================================
+
+--  Aylık kanal bazlı satış metriklerini oluştur
+with base as (
+  select
+    format_date('%Y-%m', order_date) as ym,  -- YYYY-MM formatında ay
+    channel,                                -- Satış kanalı (ör: Amazon, International)
+    sum(qty) as total_qty,                  -- Toplam satılan adet
+    sum(revenue) as total_revenue,          -- Toplam gelir
+    avg(unit_price) as avg_unit_price       -- Ortalama satış fiyatı
+  from {{ ref('int_sales_metrics') }}
+  group by 1, 2
+),
+
+--  Kanalın toplam gelirden aldığı payı hesapla
+share_calc as (
+  select
+    *,
+    round(
+      (total_revenue / sum(total_revenue) over (partition by ym)) * 100, 
+      2
+    ) as revenue_share_pct  -- Kanalın aylık gelir payı %
+  from base
+)
+
+--  Sonuç tablosu
+select
+  ym,
+  channel,
+  total_qty,
+  total_revenue,
+  avg_unit_price,
+  revenue_share_pct
+from share_calc
+order by ym, total_revenue desc
