@@ -1,0 +1,60 @@
+{{ config(materialized='table') }}
+
+-- ==========================================================
+-- MODEL: kpi_category_performance
+-- Amaç: Ürün kategorisi bazında aylık satış performansını ölçmek
+-- Veri Kaynağı: int_sales_metrics
+-- Grain: AY × KATEGORİ
+-- ==========================================================
+
+--  Aylık kategori bazlı metrikleri hesapla
+with category_base as (
+  select
+    format_date('%Y-%m', order_date) as ym,  -- YYYY-MM formatında ay
+    category,                               -- Ürün kategorisi
+    sum(qty) as total_qty,                  -- Toplam adet
+    sum(revenue) as total_revenue,          -- Toplam gelir
+    avg(unit_price) as avg_unit_price       -- Ortalama satış fiyatı
+  from {{ ref('int_sales_metrics') }}
+  group by 1, 2
+),
+
+️-- Aylık toplam gelirleri bul (oran hesaplamak için)
+month_totals as (
+  select
+    ym,
+    sum(total_revenue) as month_total_revenue
+  from category_base
+  group by ym
+),
+
+--  Kategori bazlı gelir payını ve büyümesini hesapla
+category_perf as (
+  select
+    c.ym,
+    c.category,
+    c.total_qty,
+    c.total_revenue,
+    c.avg_unit_price,
+    round((c.total_revenue / nullif(m.month_total_revenue, 0)) * 100, 2) as revenue_share_pct, -- Gelir payı
+    round(
+      (c.total_revenue - lag(c.total_revenue) over (partition by c.category order by c.ym))
+      / nullif(lag(c.total_revenue) over (partition by c.category order by c.ym), 0) * 100,
+      2
+    ) as revenue_growth_pct  -- Kategori içi büyüme oranı
+  from category_base c
+  left join month_totals m
+    on c.ym = m.ym
+)
+
+--️ Nihai çıktı
+select
+  ym,
+  category,
+  total_qty,
+  total_revenue,
+  avg_unit_price,
+  revenue_share_pct,
+  revenue_growth_pct
+from category_perf
+order by ym, category
