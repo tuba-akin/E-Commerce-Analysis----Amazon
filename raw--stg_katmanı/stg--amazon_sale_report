@@ -1,0 +1,18 @@
+{{ config(materialized='view') }}
+
+SELECT
+  Date AS order_date,
+  Status AS status,
+  Fulfilment AS fulfilment,
+  "Sales Channel" AS sales_channel,
+  Style AS style,
+  SKU AS sku,
+  Category AS category,
+  Size AS size,
+  SAFE_CAST(Qty AS INT64) AS qty,
+  SAFE_CAST(Amount AS FLOAT64) AS amount,
+  SAFE_CAST(B2B AS BOOL) AS is_b2b,
+  currency,
+  `ship-country` AS ship_country
+FROM {{ source('amazon', 'amazon_sale_report') }}
+WHERE Date IS NOT NULL
